@@ -2,9 +2,7 @@ package filetransfer;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
@@ -17,8 +15,9 @@ import java.util.Scanner;
 public class Server {
 	public static void main(String[] args) {
 		Scanner scan = new Scanner(System.in);
-		System.out.println("SERVER: Enter a port number: ");
+		System.out.println("SERVER: Enter a port number (Leave blank for default): ");
 		String p = scan.nextLine();
+		System.out.println("SERVER: Port set.");
 		if (p.equals("")) {
 			p = "9870";
 		}	
@@ -28,27 +27,24 @@ public class Server {
 		try {
 			DatagramChannel c = DatagramChannel.open();
 			Selector s = Selector.open(); 
-			c.configureBlocking(false); //If data not available immediately, move on
+			c.configureBlocking(false);
 			c.register(s, SelectionKey.OP_READ);
 			c.bind(new InetSocketAddress(port));
 			SocketAddress clientAddr = null;
 			String fileName = "";
 			boolean hasFile = false;
 			ByteBuffer buffer;
-			//DatagramSocket ds = new DatagramSocket();
-			//ds.
 
 			ArrayList<byte[]> packets = new ArrayList<byte[]>();
-			File file = new File(fileName);
-			String str = "";
 			int floor = 0;
 			int winSize = 5;
 			int high = winSize;
 			int low = 0;
 			int packetSize = 14;
-
+			int totalPackets = 0;
+			
 			// Waits until a non-empty file name is received, then exits.
-			// TO-DO: Send ACK that filename has been received
+			File file = null;
 			while (!hasFile) {
 				int t = s.select(50000);
 				if (t == 0) {
@@ -61,12 +57,28 @@ public class Server {
 					buffer.get(a);
 					fileName = new String(a);
 					System.out.println("SERVER: File name from client: " + fileName);
+					// send ack
 					if (!fileName.isEmpty()) {
+						// Calculate total number of packets, which will be sent to client.
+						file = new File(fileName);
+						long totalBytes = file.length();
+						if (totalBytes % packetSize != 0) {
+							totalPackets = (int)((totalBytes/packetSize) + 0.5);
+						} else {
+							totalPackets = (int)(totalBytes/packetSize);
+						}
+						System.out.println("total packets: " + totalPackets);
+						System.out.println("SERVER: File name received.");
+						buffer = ByteBuffer.allocate(8);
+						buffer.putInt(packetSize);
+						buffer.putInt(totalPackets);
+						buffer.flip();
+						c.send(buffer, clientAddr);
+						System.out.println("SERVER: File name received ACK sent.");
 						hasFile = true;					
 					}
 				}
 			}
-			
 			/*
 			 * 1/28
 			 * variables: Floor, winLow, winHigh, winSize = 5, ackNumber = last packet acked
@@ -79,18 +91,14 @@ public class Server {
 			 * Could use an arrayList of byte arrays and empty previous byte arrays, but keep them in memory. 
 			 */
 			
-			
+			// used to to avoid traversing entire array each cycle when cleaning
+			int prevFloor = 0; 
 			if (file.exists()) {
 				System.out.println("file exists");
 				FileInputStream in = new FileInputStream(file); // reads bytes
-				System.out.println(file.length());
-				int bytesRead = 0;
-				// send file size, packet size
-				buffer = ByteBuffer.allocate(4);
-				buffer.putInt(packetSize);
-				buffer.flip();
-				c.send(buffer, clientAddr);
+				System.out.println("File length: " + file.length());
 				
+				int bytesRead = 0;
 				while (bytesRead != -1) {
 					while (high > low && ((bytesRead >= packetSize) || (packets.size() == 0))) { // what if you run out of data in the file?
 						byte[] b = new byte[packetSize];
@@ -99,7 +107,7 @@ public class Server {
 							System.out.println("last packet");
 							b = new byte[in.available()];
 						}
-						bytesRead = in.read(b);
+						bytesRead = in.read(b); // -1 if end of file
 
 						System.out.println("Bytes read: " + bytesRead);
 						packets.add(b);
@@ -119,24 +127,29 @@ public class Server {
 					 * Raise high to difference between ack and previous floor.
 					 */
 					buffer = ByteBuffer.allocate(4);
-					SocketAddress sa = c.receive(buffer);
+					SocketAddress sa = c.receive(buffer); // receive ack
 					int ack = buffer.getInt(0);
 					if (sa != null) {
 						System.out.println("SERVER: Packet# " + ack + " ACK received.");
 
 						System.out.println("ack: " + ack);
-						high += (ack - floor);
+						if (high != totalPackets) {
+							high += (ack - floor);
+						}
 						System.out.println("high: " + high);
+						prevFloor = floor;
 						floor = ack;
 						
 						// empty packets between 0 and floor
 						// can be improved
+						/*
 						byte[] emptyByteArray = new byte[0];
 						if (ack != 0) {
-							for (int i = 0; i < floor; i++) {
+							for (int i = prevFloor; i < floor; i++) {
 								packets.set(i, emptyByteArray);
 							}
 						}
+						*/
 					}
 				}
 				in.close();
@@ -145,16 +158,6 @@ public class Server {
 				//str = "file not found";
 				//sc.write(buffer);
 			}
-			
-			// send number of packets to client, shouldn't even need this
-			/*
-			if (packets.size() > 0) {
-				buffer = ByteBuffer.allocate(100);
-				buffer.putInt(packets.size());
-				buffer.flip();
-				c.send(buffer, clientAddr);
-			}
-			*/
 		} catch (IOException e) {
 			System.out.println("Server IO Exception");
 		}
