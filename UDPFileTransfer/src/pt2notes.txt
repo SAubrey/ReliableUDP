@@ -1,0 +1,49 @@
+Network simulator:
+command in eos: startmininet
+ctrl + alt to free mouse
+username: mininet
+password: mininet
+ssh -Y mininet@ip address
+
+run simulator: sudo mn -x
+have two hosts: h1 & h2, connected by a switch s1
+try command: ifconfig
+
+to simulate packet loss:
+tc qdisc add dev s1-eh1 root netem loss 20%
+at this point, only losing 20% of data in one direction...
+use same command for: s1-eh2
+
+'add' for first time you add a rule
+replace with 'change' when changing./
+
+to simulate duplication:
+replace 'loss' with 'duplicate'
+this overrides previous command.
+to  run both at the same time, put them on the same command line:
+'loss 20% duplicate 20%'
+
+to get packets out of order:
+'delay 10ms 20%' meaning, 20% of packets do not get delayed.
+if delay is long enough, like a second, then reorder command will work  again.
+
+to test: use ~100ms.
+ at least 20% loss, duplicate.
+ 
+ For packet corruption:
+ exit simulator (not vm), save and copy .py file into vm. 
+ scp packetcorrupt.py mininet@ipaddress: (with colon at the end)
+ cp packetcorrupt.py pox/ext (move file to this  location)
+ sudo mn -x ....
+ cd pox in controller window
+ ./pox.py packetcorrupt
+ This will flip single bits in 20% of the packets.
+ when done: sudo shutdown -h now
+ 
+ Answer YES to closing window about storage.
+ 
+ sudo apt-get update
+ sudo apt-get install JDK
+ (Install jdk through VM, then able to use in simulator)
+ 
+ 
